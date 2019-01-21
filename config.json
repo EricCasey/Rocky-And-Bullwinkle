@@ -1,10 +1,11 @@
 {
   "default": 1,
   "confidence": 0.8,     
-  "timeDistance": "1yr", 
   "baseCurrency": "BTC", 
   "baseStash": 0.5,     
-  "maxCoins": 5,        
+  "maxCoins": 5,       
+  "timeDistance": "1yr", 
   "tradeFrequency": "1hr",
+  "watchPeriod": "1min",
   "email": "x@y.com"     
  }

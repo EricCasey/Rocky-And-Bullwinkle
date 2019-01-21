@@ -1,0 +1,7 @@
+.wallets
+.env
+.storage
+/node_modules
+.idea
+.ipynd_checkpoints
+.vscode

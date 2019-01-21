@@ -1,0 +1,27 @@
+{
+  "name": "trade-bot",
+  "version": "1.0.0",
+  "description": "GOAL: A CLI trading bot that watches the market weights multiple opportunities and makes trades that maximize, running persistantly from a raspberry pi.",
+  "main": "rocky.js",
+  "dependencies": {
+    "express": "^4.16.4",
+    "express-ws": "^4.0.0",
+    "http": "0.0.0",
+    "node-bittrex-api": "^0.8.3",
+    "ws": "^6.1.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EricCasey/rocky-and-bullwinkle.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/EricCasey/rocky-and-bullwinkle/issues"
+  },
+  "homepage": "https://github.com/EricCasey/rocky-and-bullwinkle#readme"
+}

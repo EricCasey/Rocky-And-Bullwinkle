@@ -1,4 +1,4 @@
-# ActionBot!
+# Rocky & Bullwinke Trading Bot!
 
 GOAL: A CLI trading bot that watches the market weights multiple opportunities and makes trades that maximize, running persistantly from a raspberry pi.
 
