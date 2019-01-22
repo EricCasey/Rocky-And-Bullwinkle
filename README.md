@@ -1,4 +1,4 @@
-# Rocky & Bullwinke Trading Bot!
+# Rocky & Bullwinke Crypto Trading Bots
 
 GOAL: A CLI trading bot that watches the market weights multiple opportunities and makes trades that maximize, running persistantly from a raspberry pi.
 
@@ -35,9 +35,10 @@ GOAL: A CLI trading bot that watches the market weights multiple opportunities a
 * get confidence interval and esitmated profit from strategy
 * Trade feed, on a localhost server via raspberry pi?
 * Use past data to predict market close or future value, 
-
+* change addresses after each trade.
 * what if the bot goes for a 1-2 hour buy-sell goal but if it misses it switches to arbitrage?
 * what if the arbitrage functionality was just a function, (find_a_way_to_make_base_money('eth'))
+* split between high cap and low cap coins
 
 * what if it just compares arbitrage to buying and holding for one hour.
 
