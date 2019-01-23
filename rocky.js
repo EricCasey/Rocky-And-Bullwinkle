@@ -4,34 +4,52 @@ const WebSocket = require('ws');
 const bittrex = require('node-bittrex-api');
 const app = express()
 const port = 3000
+const sha512 = require('js-sha512');
+const crypto = require('crypto');
+const Poloniex = require('poloniex-api-node');
+
+require('dotenv').config();
+
+var isHexdigest = require('is-hexdigest');
 
 // app.get('/', (req, res) => res.send('Hello World!'))
 
 const expressWs = require('express-ws')(app);
 
 const polo_channels = require('./exch_info/polo_channels.json');
-const polo_fee_maker = 0.2 // %!
-const polo_fee_taker = 0.1 // %!
+const polo_api_key = process.env.POLO_KEY
+const polo_api_secret = process.env.POLO_SECRET
+const polo_fee_maker = 0.1 // %!
+const polo_fee_taker = 0.2 // %!
 
 const btrx_markets = require('./exch_info/btrx_markets.json');
+const btrx_api_key = process.env.BTRX_KEY
+const btrx_api_secret = process.env.BTRX_SECRET
+const btrx_fee = 0.25 // %!
 
-console.log(btrx_markets)
+
+// console.log(btrx_markets)
 
 polo_ws_url = 'wss://api2.poloniex.com'            // wss://api2.poloniex.com
 btrx_ws_url = 'https://socket.bittrex.com/signalr' // https://socket.bittrex.com/signalr
 
+// WS for tracking triangles
 const polo_ws = new WebSocket(polo_ws_url, { perMessageDeflate: false });
+
+// WS for account notifications (must test + track)  // https://www.npmjs.com/package/poloniex-api-node
+let poloniex = new Poloniex(polo_api_key, polo_api_secret, { socketTimeout: 130000 });
 
 // CONNECTED EXCHANGES
 let exchanges = [ 'poloniex', 'bittrex' ]  
 
-// TEST TRIANGLE
+// TEST TRIANGLES
 let triangles = [ 
                   [ 'polo BTC ZRX', 'polo ZRX ETH', 'polo ETH BTC' ],
                   [ 'polo BTC XMR', 'polo XMR LTC', 'polo LTC BTC' ],
                   [ 'btrx BTC TRX', 'btrx TRX ETH', 'btrx ETH BTC' ],
                   [ 'polo BTC XRP', 'btrx XRP ETH', 'btrx ETH BTC'],
-                  [ 'polo BTC DOGE', 'polo DOGE USDC', 'polo USDC BTC' ]
+                  [ 'polo BTC DOGE', 'polo DOGE USDC', 'polo USDC BTC' ],
+                  [ 'polo DOGE ZEC', 'polo ZEC XMR', 'polo XMR DOGE' ]
                 ]
 
 // Unique pairs (which exchange?)
@@ -60,7 +78,9 @@ for(var tri = 0; tri <= triangles.length - 1; tri++) {
 
 let funny_money = 1
 let max_points = 3
-
+let pong_thresh = 10 // Change this to time-based?
+let portfolio = { XMR: 0.999, DOGE: 19992, XRP: 101.447, ETC: 2, BAT: 52 }
+// real live tradables = XRM, DOGE, XRP
 updateLog = (exch, pair, prix) => {
     //console.log('LOG UPDATE')
     //console.log(exch, pair, prix)
@@ -78,7 +98,6 @@ updateLog = (exch, pair, prix) => {
     for(var t = 0; t <= triangles.length - 1; t++) {
         checkTri(t)
     }
-    
 }
 
 converter = (exch, amnt, curr_a, curr_b) => {
@@ -98,17 +117,16 @@ converter = (exch, amnt, curr_a, curr_b) => {
     } else {
         let latest = rates[0]
         //console.log(direction, frwd, back)
-        var fee = (polo_fee_maker / 100) * amnt
+        var fee = (polo_fee_taker / 100) * amnt
         //console.log('fee of ', fee)
         if(direction === 'frwd') {
-            // console.log('frwd rate ') // maker fee?
+            // console.log('frwd rate ')
             return (amnt - fee) / latest
         } else {
-            //console.log('back rate ') // taker fee?
+            //console.log('back rate ')
             return (amnt - fee) * latest
         }
     }
-
 }
 
 checkTri = (x) => {
@@ -145,8 +163,9 @@ checkTri = (x) => {
         tri_hist[x].consecutive = 0
     }
 
-    if(tri_hist[x].consecutive > 500) {
-        console.log(`Triangle ${x} : ${a_1} -[0]-> ${b_1} -[0]-> ${c_1} : Profit = ${margin.toFixed(3)}% : ${tri_hist[x].consecutive}`)
+    if(tri_hist[x].consecutive > pong_thresh) {
+        console.log(`Triangle ${x} : ${a_1} -[0]-> ${b_1} -[0]-> ${c_1} : eProfit = ${margin.toFixed(3)}% : ${tri_hist[x].consecutive}`)
+        //console.log("CONSIDER MAKING A TRADE NOW!")
     } else {
         //console.log('watching...')
     }
@@ -157,9 +176,176 @@ checkTri = (x) => {
 // ================
 // === POLONIEX ===
 // ================
-polo_ws.on('open', function open() {
-    console.log('POLO connected')
 
+// Account Monitor
+poloniex.on('message', (channelName, data, seq) => {
+
+    if(data === 'subscriptionSucceeded') {
+        console.log("POLO_1 account notifications succeeded")
+    } else {
+
+        console.log("=== " + channelName + " ===")
+        console.log(data)
+        
+        for(let n = 0; n < data.length; n++) {
+
+            var message = data[n]
+            var messageType = message.type
+            
+            console.log("message part - " + message)
+            console.log("message type - " +  messageType)
+
+            // console.log(data[n])
+
+            if(messageType === 'newLimitOrder') {
+                console.log("MSG - New Limit Order")
+
+                let pair = message.data.currencyPair
+                let order_num = message.data.orderNumber
+                let trade_type = message.data.type
+                let trade_rate = message.data.rate
+                let trade_amnt = message.data.amount
+                let trade_time = message.data.date
+
+            } else if (messageType === 'balanceUpdate') {
+                console.log("MSG - Balance Update")
+
+                let update_curr = message.currency
+                let update_walt = message.wallet
+                let update_amnt = message.amount
+
+            } else if (messageType === 'orderUpdate') {  // 
+                console.log("MSG - Order Update")
+
+                let up_order_num = message.orderNumber
+                let up_amount = message.amount
+
+            } else if (messageType === 'newTrade') {  // 
+                console.log("MSG - New Trade")
+
+                let trade_id = message.tradeID
+                let trade_rate = message.rate
+                let trade_amount = message.amount
+                let trade_fee_mult = message.feeMuliplier
+                let trade_funding_type = message.fundingType
+                let trade_order_num = message.orderNumber
+
+            } else {
+                console.log(message)
+            }
+
+            
+
+        // === Types ===
+        // newLimitOrder
+            // Actual order placed, amount immediately taken from account at date
+                // { currencyPair: 'USDC_XRP',
+                //   orderNumber: 8902336992,
+                //   type: 'sell',
+                //   rate: '0.31690507',
+                //   amount: '101.44749229',
+                //   date: '2019-01-22 22:02:23' }
+                
+        // balanceUpdate
+            // { currency: 'USDC', wallet: 'exchange', amount: '0.14167076' }
+        
+        // orderUpdate
+            // { orderNumber: 8902336992, amount: '0.44749229' }
+
+        // newTrade
+            // { tradeID: 35531,
+            //   rate: '0.31690507',
+            //   amount: '101.00000000',
+            //   feeMultiplier: '0.00100000',
+            //   fundingType: 0,
+            //   orderNumber: 8902336992 }
+
+        }
+
+ 
+        
+        // TRADE 101 XRP FOR 32 USDC
+///////////////////////////////////
+// RESPONSE 1
+// [ { type: 'newLimitOrder',
+//     data:
+//      { currencyPair: 'USDC_XRP',
+//        orderNumber: 8902336992,
+//        type: 'sell',
+//        rate: '0.31690507',
+//        amount: '101.44749229',
+//        date: '2019-01-22 22:02:23' } },
+//   { type: 'balanceUpdate',
+//     data:
+//      { currency: 'XRP', wallet: 'exchange', amount: '-101.44749229' } } ]
+/////////////////////////////////
+// RESPONSE 2
+// [ { type: 'orderUpdate',
+//     data: { orderNumber: 8902336992, amount: '0.44749229' } },
+//   { type: 'balanceUpdate',
+//     data:
+//      { currency: 'USDC', wallet: 'exchange', amount: '31.97540466'} },
+//   { type: 'newTrade',
+//     data:
+//      { tradeID: 35531,
+//        rate: '0.31690507',
+//        amount: '101.00000000',
+//        feeMultiplier: '0.00100000',
+//        fundingType: 0,
+//        orderNumber: 8902336992 } } ]
+//////////////////////////////////
+// RESPONSE 3
+// [ { type: 'orderUpdate',
+//     data: { orderNumber: 8902336992, amount: '0.00000000' } },
+//   { type: 'balanceUpdate',
+//     data:
+//      { currency: 'USDC', wallet: 'exchange', amount: '0.14167076' } },
+//   { type: 'newTrade',
+//     data:
+//      { tradeID: 35532,
+//        rate: '0.31690507',
+//        amount: '0.44749229',
+//        feeMultiplier: '0.00100000',
+//        fundingType: 0,
+//        orderNumber: 8902336992 } } ]
+
+
+    }
+});
+ 
+poloniex.on('open', () => {
+  console.log(`POLO_1 connected`);
+  poloniex.subscribe(1000); // account notification channel (beta)
+});
+ 
+poloniex.on('close', (reason, details) => {
+  console.log(`Poloniex WebSocket connection disconnected`);
+});
+ 
+poloniex.on('error', (error) => {
+  console.log(`POLO_1 : An error has occured`);
+});
+ 
+poloniex.openWebSocket();
+
+// VANILLA "READING" WEBSOCKET
+polo_ws.on('open', function open() {
+    console.log('POLO_0 connected')
+
+    // Subscribe to account notifications
+    // let epoch = Math.floor((new Date).getTime()/1000)
+    // let payload = `nonce=${epoch}`
+    // let sign = crypto.createHmac('sha256', polo_api_secret).update(payload).digest('hex')
+    // console.log(isHexdigest(sign, 'sha512')) //console.log(isHexdigest('e70a8ab8c27b0fb75aa11a8f8ec4c4731bd26df9d94b2a7cddb5bdb4ec757286'))
+    // polo_ws.send(JSON.stringify({
+    //     "command": "subscribe",
+    //     "channel": 1000,
+    //     "key": polo_api_key,
+    //     "payload": payload,
+    //     "sign": crypto.createHmac('sha256', polo_api_secret).update(payload).digest('hex')  // HMAC-SHA512 signature of the payload signed by your secret
+    //     }))           // "<hmac_sha512(secret).update("nonce=<epoch ms>").hexdigest()>"
+
+    // Subscribe to triangle channels
     for(var sub = 0; sub <= sub_set.length - 1; sub++) {
         let angle = sub_set[sub].split(' '), exch = angle[0], one = angle[1], two = angle[2]
         if(exch === 'polo'){
@@ -176,13 +362,14 @@ polo_ws.on('open', function open() {
 })
 
 polo_ws.onerror = error => {
-    console.log(`POLO disconnected`, error)
+    console.log(`POLO_0 disconnected`, error)
     }
 
 polo_ws.onmessage = e => {
     //console.log('polo pong')
     let msg = JSON.parse(e.data)
     let pair = polo_channels[0][msg[0]]
+    //console.log(msg)
     if(msg.length > 1) {
         let prix = msg[2][0][2]
         updateLog('polo', pair, prix)
@@ -196,12 +383,12 @@ polo_ws.onmessage = e => {
 // ===============
 if(exchanges.includes('bittrex')) {
     bittrex.options({
-        'verbose' : true,
+        'verbose' : false,
         'cleartext' : true,
         'baseUrl' : btrx_ws_url,  // 'https://bittrex.com/api/v1.1',
         websockets: {
           onConnect: function() {
-            console.log('BTRX connected');
+            console.log('BTRX_0 connected');
             for(var sub = 0; sub <= sub_set.length - 1; sub++) {
                 let angle = sub_set[sub].split(' '), exch = angle[0], one = angle[1], two = angle[2]
                 if(exch === 'btrx'){
@@ -243,5 +430,5 @@ if(exchanges.includes('bittrex')) {
         websocketClient = client;
       });
 }
-
-app.listen(port, () => console.log(`Example app listening on port ${port}!`))
+//////////////////////////////////////
+app.listen(port, () => console.log(`ROCKY Running On Port: ${port}!`))
