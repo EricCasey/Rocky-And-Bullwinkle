@@ -51,13 +51,14 @@ for(var i = 0; i <= arr.length - 1; i++) {
         
         // === Types ===
         // newLimitOrder
-            // Actual order placed
+            // Actual order placed, amount immediately taken from account at date
                 // { currencyPair: 'USDC_XRP',
                 //   orderNumber: 8902336992,
                 //   type: 'sell',
                 //   rate: '0.31690507',
                 //   amount: '101.44749229',
                 //   date: '2019-01-22 22:02:23' }
+                
         // balanceUpdate
             // { currency: 'USDC', wallet: 'exchange', amount: '0.14167076' }
         

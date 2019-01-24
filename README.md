@@ -3,23 +3,16 @@
 GOAL: A CLI trading bot that watches the market weights multiple opportunities and makes trades that maximize, running persistantly from a raspberry pi.
 
 ## Strategy Implementation Features (levers)
-
-    * Confidence Threshold (0.8)
-
-    * Base Currency (and mix, like keep 75% BTC)
-
-    * How Far Back (1 yr, 10 days, many tests?)
-
-    * Trading Frequency Goal (1-hr frequency buy and sells)
-
+* Confidence Threshold (0.8)
+* Base Currency (and mix, like keep 75% BTC)
+* How Far Back (1 yr, 10 days, many tests?)
+* Trading Frequency Goal (1-hr frequency buy and sells)
 ## What You'll Need
 * Raspberry Pi
 * Poloniex Account
 * CryptoCompare Account
 * An email account so you can get notifications
 * Python
-
-
 ### NOTES
 * start script?
 * config file?
@@ -27,6 +20,7 @@ GOAL: A CLI trading bot that watches the market weights multiple opportunities a
 * many exchanges?
 * all currencies?
 * 3rd party data?
+* trade smaller amounts so they get filled faster.
 * first things first? decide when to retrain? estimate trading time?
 * predict how long training will take?
 * remember training logs from previous runs, in csv.
@@ -39,12 +33,10 @@ GOAL: A CLI trading bot that watches the market weights multiple opportunities a
 * what if the bot goes for a 1-2 hour buy-sell goal but if it misses it switches to arbitrage?
 * what if the arbitrage functionality was just a function, (find_a_way_to_make_base_money('eth'))
 * split between high cap and low cap coins
-
-* what if it just compares arbitrage to buying and holding for one hour.
-
-* Fees! do it programmatically somehow from APIs
-
+* ETH blockchain takes about 15s to complete a transaction.
+* what if it just compares arbitrage to buying and holding for one hour
+* Fees! do it programmatically somehow from APIs (these are based on the order book?)
 * Keep a log of how long it will take for the order to go through.
 * going to need to separate the operational functions from the actual algorithm.
 
-
+* Shuffle()?
