@@ -13,8 +13,6 @@ const expressWs = require('express-ws')(app)
 
 require('dotenv').config()
 
-// app.get('/', (req, res) => res.send('Hello World!'))
-
 // ----- TMP ------
 let funny_money = 1  
 let max_points = 3   // the length of the realtime log arrays
@@ -50,7 +48,7 @@ const poloniex = new Poloniex(polo_api_key, polo_api_secret, { socketTimeout: 13
 // CONNECTED EXCHANGES
 let exchanges = [ 'poloniex' ]   // , 'bittrex' 
 
-// TEST TRIANGLES
+// TEST TRIANGLES (these should be determined by bullwinkle)
 let triangles = [ 
                 // [ 'polo BTC ZRX', 'polo ZRX ETH', 'polo ETH BTC' ],
                 // [ 'polo BTC XMR', 'polo XMR LTC', 'polo LTC BTC' ],
@@ -361,120 +359,133 @@ poloniex.on('message', (channelName, data, seq) => {
     } else {
 
         console.log("=== " + channelName + " ===")
-        console.log(data)
+        //console.log(data)
         
+
+        if(channelName === 'ticker') {
+            //console.log(data)
+
+            console.log(data.currencyPair + " lowest ask " + data.lowestAsk)
+
+        } else {
+
         // handle if NewTrade isnt first or not present 
         // for(let n = 0; n < data.length; n++) {
         //     if(data[n].type === 'newLimitOrder') {
         //     }
         // }
 
-        for(let n = 0; n < data.length; n++) {
+            for(let n = 0; n < data.length; n++) {
 
-            let message = data[n]
-            let messageType = message.type
-            
-            // console.log("message part - " + message)
-            // console.log("message type - " +  messageType)
-
-            if(messageType === 'newLimitOrder') {
-                console.log("> MSG - New Limit Order")
-
-                let pair = message.data.currencyPair
-                let new_order_num = message.data.orderNumber
-                let order_type = message.data.type
-                let order_rate = Number(message.data.rate)
-                let order_amnt = Number(message.data.amount)
-                let order_time = message.data.date
-
-                //console.log(pair, new_order_num, trade_type, trade_rate, trade_amnt, trade_time)
+                let message = data[n]
+                let messageType = message.type
                 
-                histUpdate({ type: 'newLimitOrder',
-                             pair: pair,
-                             order_id: new_order_num,
-                             order_type: order_type,
-                             order_rate: order_rate,
-                             order_amnt: order_amnt,
-                             order_time: order_time
-                            })
-
-            } else if (messageType === 'balanceUpdate') {
-                console.log("> MSG - Balance Update")
-
-                let update_curr = message.data.currency
-                let update_walt = message.data.wallet
-                let update_amnt = update_amnt.charAt(0) === '-' ? message.data.amount.slice(1) : message.data.amount
-                let operator = update_amnt.charAt(0) === '-' ? '-' : '+'
-
-                //console.log(update_curr, update_walt, operator, Number(update_amnt))
-
-                portUpdate('polo', update_curr, operator, Number(update_amnt))
-
-            } else if (messageType === 'orderUpdate') {  
-                console.log("> MSG - Order Update")
-
-                let up_order_num = message.data.orderNumber
-                let up_amount = Number(message.data.amount)
-
-                histUpdate({ type : 'orderUpdate',
-                             order_id: trade_order_num,
-                             up_amnt: up_amount
-                           })
-
-            } else if (messageType === 'newTrade') {  
-                console.log("> MSG - New Trade")
-
-                let trade_id = message.data.tradeID
-                let trade_rate = Number(message.data.rate)
-                let trade_amnt = Number(message.data.amount)
-                let trade_fee_mult = Number(message.data.feeMultiplier)
-                let trade_funding_type = message.data.fundingType
-                let trade_order_num = message.data.orderNumber
-
-                // console.log(trade_id, trade_rate, trade_amount, trade_fee_mult, trade_funding_type, trade_order_num)
-
-                histUpdate({ type : 'newTrade',
-                             order_id: trade_order_num,
-                             trade_id: trade_id,
-                             trade_rate: trade_rate,
-                             trade_amnt: trade_amnt,
-                             trade_fee: trade_fee_mult
-                           })
-
-            } else {
-                console.log(message)
+                // console.log("message part - " + message)
+                // console.log("message type - " +  messageType)
+    
+                if(messageType === 'newLimitOrder') {
+                    console.log("> MSG - New Limit Order")
+    
+                    let pair = message.data.currencyPair
+                    let new_order_num = message.data.orderNumber
+                    let order_type = message.data.type
+                    let order_rate = Number(message.data.rate)
+                    let order_amnt = Number(message.data.amount)
+                    let order_time = message.data.date
+    
+                    //console.log(pair, new_order_num, trade_type, trade_rate, trade_amnt, trade_time)
+                    
+                    histUpdate({ type: 'newLimitOrder',
+                                 pair: pair,
+                                 order_id: new_order_num,
+                                 order_type: order_type,
+                                 order_rate: order_rate,
+                                 order_amnt: order_amnt,
+                                 order_time: order_time
+                                })
+    
+                } else if (messageType === 'balanceUpdate') {
+                    console.log("> MSG - Balance Update")
+    
+                    let update_curr = message.data.currency
+                    let update_walt = message.data.wallet
+                    let update_amnt = update_amnt.charAt(0) === '-' ? message.data.amount.slice(1) : message.data.amount
+                    let operator = update_amnt.charAt(0) === '-' ? '-' : '+'
+    
+                    //console.log(update_curr, update_walt, operator, Number(update_amnt))
+    
+                    portUpdate('polo', update_curr, operator, Number(update_amnt))
+    
+                } else if (messageType === 'orderUpdate') {  
+                    console.log("> MSG - Order Update")
+    
+                    let up_order_num = message.data.orderNumber
+                    let up_amount = Number(message.data.amount)
+    
+                    histUpdate({ type : 'orderUpdate',
+                                 order_id: trade_order_num,
+                                 up_amnt: up_amount
+                               })
+    
+                } else if (messageType === 'newTrade') {  
+                    console.log("> MSG - New Trade")
+    
+                    let trade_id = message.data.tradeID
+                    let trade_rate = Number(message.data.rate)
+                    let trade_amnt = Number(message.data.amount)
+                    let trade_fee_mult = Number(message.data.feeMultiplier)
+                    let trade_funding_type = message.data.fundingType
+                    let trade_order_num = message.data.orderNumber
+    
+                    // console.log(trade_id, trade_rate, trade_amount, trade_fee_mult, trade_funding_type, trade_order_num)
+    
+                    histUpdate({ type : 'newTrade',
+                                 order_id: trade_order_num,
+                                 trade_id: trade_id,
+                                 trade_rate: trade_rate,
+                                 trade_amnt: trade_amnt,
+                                 trade_fee: trade_fee_mult
+                               })
+    
+                } else {
+                    console.log(message)
+                }
+    
+            // === Types ===
+            // newLimitOrder
+                // Actual order placed, amount immediately taken from account at date
+                    // { currencyPair: 'USDC_XRP',
+                    //   orderNumber: 8902336992,
+                    //   type: 'sell',
+                    //   rate: '0.31690507',
+                    //   amount: '101.44749229',
+                    //   date: '2019-01-22 22:02:23' }
+                    
+            // balanceUpdate
+                // { currency: 'USDC', wallet: 'exchange', amount: '0.14167076' }
+            
+            // orderUpdate
+                // { orderNumber: 8902336992, amount: '0.44749229' }
+    
+            // newTrade
+                // { tradeID: 35531,
+                //   rate: '0.31690507',
+                //   amount: '101.00000000',
+                //   feeMultiplier: '0.00100000',
+                //   fundingType: 0,
+                //   orderNumber: 8902336992 }
             }
 
-        // === Types ===
-        // newLimitOrder
-            // Actual order placed, amount immediately taken from account at date
-                // { currencyPair: 'USDC_XRP',
-                //   orderNumber: 8902336992,
-                //   type: 'sell',
-                //   rate: '0.31690507',
-                //   amount: '101.44749229',
-                //   date: '2019-01-22 22:02:23' }
-                
-        // balanceUpdate
-            // { currency: 'USDC', wallet: 'exchange', amount: '0.14167076' }
-        
-        // orderUpdate
-            // { orderNumber: 8902336992, amount: '0.44749229' }
-
-        // newTrade
-            // { tradeID: 35531,
-            //   rate: '0.31690507',
-            //   amount: '101.00000000',
-            //   feeMultiplier: '0.00100000',
-            //   fundingType: 0,
-            //   orderNumber: 8902336992 }
         }
+
+    
     }
 });
  
 poloniex.on('open', () => {
   console.log(`POLO_1 connected`);
-  poloniex.subscribe(1000);                        // account notification channel (beta)
+  poloniex.subscribe(1000);  
+  poloniex.subscribe('ticker');                 // account notification channel (beta)
   poloniex.returnBalances().then((blncs) => {   // account balance 
     console.log("POLO_1 account balances acquired")
 
