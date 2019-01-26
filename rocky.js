@@ -6,6 +6,7 @@ const sha512 = require('js-sha512')
 const crypto = require('crypto')
 const Poloniex = require('poloniex-api-node')
 const isHexdigest = require('is-hexdigest')
+const waitUntil = require('wait-until');
 const app = express()
 const port = 3000
 
@@ -14,9 +15,8 @@ const expressWs = require('express-ws')(app)
 require('dotenv').config()
 
 // ----- TMP ------
-let funny_money = 1  
-let max_points = 3   // the length of the realtime log arrays
-let pong_thresh = 1 // Change this to time-based?
+let max_points = 3   // the length of the realtime log arrays (speed?)
+let pong_thresh = 1  // Change this to time-based?
 let max_trades = 1
 let triangle_q = 0
 let portfolio = {  }
@@ -37,8 +37,6 @@ const btrx_api_key = process.env.BTRX_KEY
 const btrx_api_secret = process.env.BTRX_SECRET
 const btrx_fee = 0.25 // %!
 
-// console.log(polo_tri_obj)
-
 polo_ws_url = 'wss://api2.poloniex.com'            // wss://api2.poloniex.com
 btrx_ws_url = 'https://socket.bittrex.com/signalr' // https://socket.bittrex.com/signalr
 
@@ -58,19 +56,20 @@ let triangles = [
                 // [ 'btrx BTC TRX', 'btrx TRX ETH', 'btrx ETH BTC' ],
                 // [ 'polo BTC XRP', 'btrx XRP ETH', 'btrx ETH BTC'],
                 // [ 'polo BTC DOGE', 'polo DOGE USDC', 'polo USDC BTC' ],
-                  //[ 'polo USDC FOAM', 'polo FOAM BTC', 'polo BTC USDC' ],
-                  //[ 'polo XMR BTC', 'polo BTC ZEC', 'polo ZEC XMR' ],
-                 // [ 'polo DOGE BTC', 'polo BTC USDC', 'polo USDC DOGE' ],
-                //   [ 'polo BAT ETH', 'polo ETH USDT', 'polo USDT BAT' ],
-                //   [ 'polo BAT ETH', 'polo ETH ETC', 'polo ETC BAT' ],
-                 // [ 'polo BAT BTC', 'polo BTC USDT', 'polo USDT BAT' ]
-                 [ 'polo XMR USDT', 'polo USDT NXT', 'polo NXT XMR' ],    //   XMR - USDT - NXT
-                 [ 'polo ETH STEEM', 'polo STEEM BTC', 'polo BTC ETH' ],  //   ETH - STEEM - BTC
-                 [ 'polo ETH LSK', 'polo LSK USDT', 'polo USDT ETH' ]    //   ETH - LSK - USDT
-                
-                //   XMR - BTC - NXT
-                //   XMR - BTC - BCN
-                //   XMR - BCN - BTC
+                // [ 'polo USDC FOAM', 'polo FOAM BTC', 'polo BTC USDC' ],
+                // [ 'polo XMR BTC', 'polo BTC ZEC', 'polo ZEC XMR' ],
+                // [ 'polo DOGE BTC', 'polo BTC USDC', 'polo USDC DOGE' ],
+                // [ 'polo BAT ETH', 'polo ETH USDT', 'polo USDT BAT' ],
+                // [ 'polo BAT ETH', 'polo ETH ETC', 'polo ETC BAT' ],
+                // [ 'polo BAT BTC', 'polo BTC USDT', 'polo USDT BAT' ]
+                //  [ 'polo XMR USDT', 'polo USDT NXT', 'polo NXT XMR' ],    //   XMR - USDT - NXT
+                //  [ 'polo ETH STEEM', 'polo STEEM BTC', 'polo BTC ETH' ],  //   ETH - STEEM - BTC
+                //  [ 'polo ETH LSK', 'polo LSK USDT', 'polo USDT ETH' ],    //   ETH - LSK - USDT
+                 //[ 'polo XMR BTC', 'polo BTC NXT', 'polo NXT XMR' ],      //   XMR - BTC - NXT
+                 //[ 'polo XMR BTC', 'polo BTC BCN', 'polo BCN XMR' ]      //   XMR - BTC - BCN
+                 //[ 'polo XMR BCN', 'polo BCN BTC', 'polo BTC XMR' ],      //   XMR - BCN - BTC
+                 //[ 'polo ETH LSK', 'polo LSK BTC', 'polo USDT ETH' ]
+                 [ 'polo DOGE USDC', 'polo USDC USDT', 'polo USDT DOGE' ]
                 //   ETH - LSK - BTC
                 //   ETH - GNT - USDT
                 //   ETH - GAS - BTC
@@ -78,7 +77,7 @@ let triangles = [
                 ]
 
 // from mass list
-//triangles = polo_tri_obj['ETH']
+// triangles = polo_tri_obj['DOGE']
 // console.log(triangles)
 
 // Unique pairs (which exchange?)
@@ -110,7 +109,6 @@ let trade_wall = { A: false, B: false, C: false }
 
 // FUNCTION -> Update Realtime Log
 updateLog = (exch, pair, prix) => {
-    //console.log(log)
     if(prix !== undefined) {
         if(log[exch][pair] === [ 'null' ]) {
             log[exch][pair] = prix
@@ -118,6 +116,7 @@ updateLog = (exch, pair, prix) => {
             if(log[exch][pair].length === max_points) {
                 log[exch][pair].shift()
             }
+            // these need to be split by 
             log[exch][pair].push(prix[0]) //log[exch][pair] = log[exch][pair].push(prix[0])
         }
     }
@@ -155,228 +154,267 @@ converter = (exch, amnt, curr_a, curr_b) => {
 // FUNCTION -> Check For Triangular Arbitrage Opportunity
 checkTri = (x) => {
 
-    let tri = triangles[x]
-    let a = tri[0], b = tri[1], c = tri[2]
+    if(histLog.triangle === undefined) {    // meaning there's no triangle in aciton
+        // console.log('no triangle in action')
+        let tri = triangles[x]
+        let a = tri[0], b = tri[1], c = tri[2]
 
-    //        exchange               currency 1             currency 2
-    let a_e = a.split(' ')[0], a_1 = a.split(' ')[1], a_2 = a.split(' ')[2] // angle A |  Base to A  $
-    let b_e = b.split(' ')[0], b_1 = b.split(' ')[1], b_2 = b.split(' ')[2] // angle B |  A to B     $$ 
-    let c_e = c.split(' ')[0], c_1 = c.split(' ')[1], c_2 = c.split(' ')[2] // angle C |  B to Base  $$$
+        //        exchange               currency 1             currency 2
+        let a_e = a.split(' ')[0], a_1 = a.split(' ')[1], a_2 = a.split(' ')[2] // angle A |  Base to A  $
+        let b_e = b.split(' ')[0], b_1 = b.split(' ')[1], b_2 = b.split(' ')[2] // angle B |  A to B     $$ 
+        let c_e = c.split(' ')[0], c_1 = c.split(' ')[1], c_2 = c.split(' ')[2] // angle C |  B to Base  $$$
 
-    let start_bal = portfolio[a_e] !== undefined ? portfolio[a_e][a_1] : 1
+        let start_bal = portfolio[a_e] !== undefined ? portfolio[a_e][a_1] : 1
 
-    if(a_1 === 'BAT') {
-        start_bal = 1.1
-    } else if (a_1 === 'DOGE') {
-        start_bal = 1000
-    } else if (a_1 === 'USDC') {
-        start_bal = 0.02
-    } else if (a_1 === 'XMR') {
-        start_bal = 0.001
-    } else if (a_1 === 'ETC') {
-        start_bal = 0.1
-    } else if (a_1 === 'ETH') {
-        start_bal = 0.001
-    }
-
-    // generate lowest possible ask for this triangle to complete.
-    // fibbonacci snowball function here?
-
-    let a_ask = ask_hist[`${a_1}_${a_2}`] === undefined ? ask_hist[`${a_2}_${a_1}`] : ask_hist[`${a_1}_${a_2}`]
-    let b_ask = ask_hist[`${b_1}_${b_2}`] === undefined ? ask_hist[`${b_2}_${b_1}`] : ask_hist[`${b_1}_${b_2}`]
-    let c_ask = ask_hist[`${c_1}_${c_2}`] === undefined ? ask_hist[`${c_2}_${c_1}`] : ask_hist[`${c_1}_${c_2}`]
-
-    // console.log(' ----------------- ')
-    // console.log(a_1, '-', b_1, '-', c_1)
-    // console.log('----- Min ASK')
-    // console.log(a_ask, b_ask, c_ask)
-    // console.log('----- BALANCES')
-
-///////// ANGLE A
-    let a_out = converter(a_e, start_bal, a_1, a_2)      // Expected Profit
-    let a_back = converter(a_e, 1, a_2, a_1)             // Reverse Conversion
-    let a_frwd = converter(c_e, 1, a_1, a_2)             // Backward Conversion
-    let a_dir = log['polo'][`${a_1}_${a_2}`][0] === 'null' ? 'frwd' : 'back'
-    let a_tradable = true
-    let a_min_spend = 0
-
-    // console.log('-- ', a_e, a_1, a_2, ' --') 
-    // console.log('trade 1: youd have ', a_out, a_2)
-    // console.log('trade 1: from ' + start_bal + ' ' + a_1)
-
-    if(portfolio[a_e] !== undefined) {
-        if(a_dir === 'frwd') {
-            if((portfolio[a_e][a_1] / (a_back * a_ask)) <= 1) {
-                a_tradable = false
-            }
-            a_min_spend = a_back * a_ask
-            // console.log('balance -----: ' + portfolio[a_e][a_1] + ' ' + a_1)
-            // console.log('a_min_spend -: ' + a_min_spend + ' ' + a_1)
-            // console.log('-> enough ---: ' + portfolio[a_e][a_1] / (a_back * a_ask) + ' trades')
-            // console.log("-> Min spend of " + a_ask + ' ' + a_2)
-            // console.log("-> Min spend of " + a_back * a_ask + ' ' + a_1)
-        } else {
-            if((start_bal / (a_ask)) <= 1) {
-                a_tradable = false
-            }
-            a_min_spend = a_ask
-
-            // console.log('balance -----: ' + portfolio[a_e][a_2] + ' ' + a_2)
-            // console.log('a_min_spend -: ' + a_min_spend + ' ' + a_2)
-            // console.log('<- enough ---: ' + (start_bal / (a_ask)) + ' trades')
-            // console.log("<- Min spend of " + a_frwd + a_ask + ' ' + a_2)
-            // console.log("<- Min spend of " + a_ask + ' ' + a_2)
-            // console.log("<- enough for: " + (start_bal / (a_ask)) + ' trades')
+        if(a_1 === 'BAT') {
+            start_bal = 1.1
+        } else if (a_1 === 'DOGE') {
+            start_bal = 600
+        } else if (a_1 === 'USDC') {
+            start_bal = 0.02
+        } else if (a_1 === 'XMR') {
+            start_bal = 0.001
+        } else if (a_1 === 'ETC') {
+            start_bal = 0.1
+        } else if (a_1 === 'ETH') {
+            start_bal = 0.01
         }
-    }
+        // generate lowest possible ask for this triangle to complete.
+        // fibbonacci snowball function here?
 
-///////// ANGLE B
-    let b_out = converter(b_e, a_out, b_1, b_2) 
-    let b_back = converter(b_e, 1, b_2, b_1)     // Reverse Conversion
-    let b_frwd = converter(b_e, 1, b_1, b_2)
-    let b_dir = log['polo'][`${b_1}_${b_2}`][0] === 'null' ? 'frwd' : 'back' 
-    let b_tradable = true
-    let b_min_spend = 0
+        let a_ask = ask_hist[`${a_1}_${a_2}`] === undefined ? ask_hist[`${a_2}_${a_1}`] : ask_hist[`${a_1}_${a_2}`]
+        let b_ask = ask_hist[`${b_1}_${b_2}`] === undefined ? ask_hist[`${b_2}_${b_1}`] : ask_hist[`${b_1}_${b_2}`]
+        let c_ask = ask_hist[`${c_1}_${c_2}`] === undefined ? ask_hist[`${c_2}_${c_1}`] : ask_hist[`${c_1}_${c_2}`]
 
-    // console.log('-- ', b_e, b_1, b_2, ' --') 
-    // console.log('trade 2: youd have ', b_out, b_2)
-    // console.log('trade 2: from ' + a_out + ' ' + b_1)
+        // console.log(' ----------------- ')
+        // console.log(a_1, '-', b_1, '-', c_1)
+        // console.log('----- Min ASK')
+        // console.log(a_ask, b_ask, c_ask)
+        // console.log('----- BALANCES')
 
-    if(portfolio[b_e] !== undefined) {
-        if(b_dir === 'frwd') {
-            if(((a_out + portfolio[b_e][b_1]) / (b_back * b_ask)) <= 1) {
-                b_tradable = false
-            }
-            b_min_spend = b_back * b_ask
-            // console.log('balance -----: ' + a_out + portfolio[b_e][b_1] + ' ' + b_1)
-            // console.log('b_min_spend -: ' + b_min_spend + ' ' + b_1)
-            // console.log("-> Min spend of " + b_ask + ' ' + b_2)
-            // console.log("-> Min spend of " + b_back * b_ask + ' ' + b_1)
-            // console.log("-> enough for: " + (a_out + portfolio[b_e][b_1]) / (b_back * b_ask) + ' trades')
-        } else {
-            if((a_out / (b_ask)) <= 1) {
-                b_tradable = false
-            }
-            b_min_spend = b_ask
-            // console.log("<- Min spend of " + b_frwd * b_ask + ' ' + b_2)
-            // console.log("<- Min spend of " + b_ask + ' ' + b_2)
-            // console.log("<- enough for: " + (a_out / (b_ask)) + ' trades')
-        }
-    }
+    ///////// ANGLE A
+        let a_out = converter(a_e, start_bal, a_1, a_2)      // Expected Profit
+        let a_back = converter(a_e, 1, a_2, a_1)             // Reverse Conversion
+        let a_frwd = converter(c_e, 1, a_1, a_2)             // Backward Conversion
+        let a_dir = log['polo'][`${a_1}_${a_2}`][0] === 'null' ? 'frwd' : 'back'
+        let a_tradable = true
+        let a_min_spend = 0
 
-///////// ANGLE C
-    let c_out = converter(c_e, b_out, c_1, c_2)
-    let c_back = converter(c_e, 1, c_2, c_1)     // Reverse Conversion
-    let c_frwd = converter(c_e, 1, c_1, c_2)
-    let c_dir = log['polo'][`${c_1}_${c_2}`][0] === 'null' ? 'frwd' : 'back'  
-    let c_tradable = true 
-    let c_min_spend = 0
+        // console.log('-- ', a_e, a_1, a_2, ' --') 
+        // console.log('trade 1: youd have ', a_out, a_2)
+        // console.log('trade 1: from ' + start_bal + ' ' + a_1)
 
-    // console.log('-- ', c_e, c_1, c_2, ' --') 
-    // console.log('trade 3: youd have ', c_out, c_2)
-    // console.log('trade 3: from ' + b_out + ' ' + c_1)
-
-    if(portfolio[c_e] !== undefined) {
-        if(c_dir === 'frwd') {
-            if(((b_out + portfolio[c_e][c_1]) / (c_back * c_ask)) <= 1) {
-                c_tradable = false
-            }
-            c_min_spend = c_back * c_ask
-            // console.log('balance -----: ' + b_out + portfolio[c_e][c_1] + ' ' + c_1)
-            // console.log('c_min_spend -: ' + c_min_spend + ' ' + c_1)
-            // console.log("-> Min spend of " + c_ask + ' ' + c_2)
-            // console.log("-> Min spend of " + c_back * c_ask + ' ' + c_1)
-            // console.log("-> enough for: " + (b_out + portfolio[c_e][c_1]) / (c_back * c_ask) + ' trades')
-        } else {
-            if((b_out / (c_ask)) <= 1) {
-                c_tradable = false
-            }
-            c_min_spend = c_ask
-
-            // console.log('balance -----: ' + (portfolio[c_e][c_1] + b_out) + ' ' + c_1)
-            // console.log('a_min_spend -: ' + c_min_spend + ' ' + c_1)
-            // console.log('<- enough ---: ' + (b_out / (c_ask)) + ' trades')
-            // console.log("<- Min spend of " + c_frwd * c_ask + ' ' + c_2)
-            // console.log("<- Min spend of " + c_ask + ' ' + c_1)
-            // console.log("<- enough for: " + (b_out / (c_ask)) + ' trades')
-        }
-    }
-
-    let profit = c_out - start_bal
-    let margin = (profit / start_bal) * 100
-
-    if(a_tradable && b_tradable && c_tradable && !isNaN(margin)) {
-        console.log(' ----------------- ')
-        console.log(a_1, '-', b_1, '-', c_1)
-        console.log('triangle in play!')
-        console.log(margin + '%')
-
-        if(margin >= 0 && margin <= 100) {  // this basically handles if the data gets fucked up
-            tri_hist[x].consecutive = tri_hist[x].consecutive + 1
-        } else {
-            tri_hist[x].consecutive = 0
-        }
-
-        if(tri_hist[x].consecutive > pong_thresh) {
-
-            if(max_trades > 0) { // if we're not out of trades in config.
-    
-                // Where is the value coming from in this triangle? trade 1, 2 or 3?
-                console.log(`Tri ${x} : ${a_1}-[0]->${b_1}-[0]->${c_1}-[0]->${a_1} : eP = ${margin.toFixed(3)}% : ${tri_hist[x].consecutive}`)
-                
-                max_trades = max_trades - 1  // i.e. if max_trades was set to 10 in config
-                triangle_q = triangle_q + 1  // idk
-    
-                fireTriangle(tri, margin, start_bal) // CARPE DIEM!
-    
+        if(portfolio[a_e] !== undefined) {
+            if(a_dir === 'frwd') {
+                a_min_spend = a_back * a_ask
+                if((portfolio[a_e][a_1] / (a_back * a_ask)) <= 2) {
+                    a_tradable = false
+                }
+                // console.log('balance -----: ' + portfolio[a_e][a_1] + ' ' + a_1)
+                // console.log('a_min_spend -: ' + a_min_spend + ' ' + a_1)
+                // console.log('-> enough ---: ' + Math.round(portfolio[a_e][a_1] / (a_back * a_ask)) + ' trades')
+                // console.log("-> Min spend of " + a_ask + ' ' + a_2)
+                // console.log("-> Min spend of " + a_back * a_ask + ' ' + a_1)
             } else {
-                console.log('no trades left')
+                a_min_spend = a_ask
+                if((start_bal / (a_ask)) <= 2) { // JayZ's Mother?
+                    a_tradable = false           // Don't buy anything unless you can afford 2 of them
+                }
+                // console.log('balance -----: ' + portfolio[a_e][a_2] + ' ' + a_2)
+                // console.log('a_min_spend -: ' + a_min_spend + ' ' + a_2)
+                // console.log('<- enough ---: ' + Math.round(start_bal / a_ask) + ' trades')
+                // console.log("<- Min spend of " + a_frwd * a_ask + ' ' + a_2)
+                // console.log("<- Min spend of " + a_ask + ' ' + a_1)
+            }
+        }
+
+    ///////// ANGLE B
+        let b_out = converter(b_e, a_out, b_1, b_2) 
+        let b_back = converter(b_e, 1, b_2, b_1)     // Reverse Conversion
+        let b_frwd = converter(b_e, 1, b_1, b_2)
+        let b_dir = log['polo'][`${b_1}_${b_2}`][0] === 'null' ? 'frwd' : 'back' 
+        let b_tradable = true
+        let b_min_spend = 0
+
+        // console.log('-- ', b_e, b_1, b_2, ' --') 
+        // console.log('trade 2: youd have ', b_out, b_2)
+        // console.log('trade 2: from ' + a_out + ' ' + b_1)
+
+        if(portfolio[b_e] !== undefined) {
+            if(b_dir === 'frwd') {
+                if(((a_out + portfolio[b_e][b_1]) / (b_back * b_ask)) <= 1) {
+                    b_tradable = false
+                }
+                b_min_spend = b_back * b_ask
+                // console.log('balance -----: ' + a_out + portfolio[b_e][b_1] + ' ' + b_1)
+                // console.log('b_min_spend -: ' + b_min_spend + ' ' + b_1)
+                // console.log("-> Min spend of " + b_ask + ' ' + b_2)
+                // console.log("-> Min spend of " + b_back * b_ask + ' ' + b_1)
+                // console.log("-> enough for: " + (a_out + portfolio[b_e][b_1]) / (b_back * b_ask) + ' trades')
+            } else {
+                if((a_out / (b_ask)) <= 1) {
+                    b_tradable = false
+                }
+                b_min_spend = b_ask
+                // console.log("<- Min spend of " + b_frwd * b_ask + ' ' + b_2)
+                // console.log("<- Min spend of " + b_ask + ' ' + b_2)
+                // console.log("<- enough for: " + (a_out / (b_ask)) + ' trades')
+            }
+        }
+
+    ///////// ANGLE C
+        let c_out = converter(c_e, b_out, c_1, c_2)
+        let c_back = converter(c_e, 1, c_2, c_1)     // Reverse Conversion
+        let c_frwd = converter(c_e, 1, c_1, c_2)
+        let c_dir = log['polo'][`${c_1}_${c_2}`][0] === 'null' ? 'frwd' : 'back'  
+        let c_tradable = true 
+        let c_min_spend = 0
+
+        // console.log('-- ', c_e, c_1, c_2, ' --') 
+        // console.log('trade 3: youd have ', c_out, c_2)
+        // console.log('trade 3: from ' + b_out + ' ' + c_1)
+
+        if(portfolio[c_e] !== undefined) {
+            if(c_dir === 'frwd') {
+                if(((b_out + portfolio[c_e][c_1]) / (c_back * c_ask)) <= 1) {
+                    c_tradable = false
+                }
+                c_min_spend = c_back * c_ask
+                // console.log('balance -----: ' + b_out + portfolio[c_e][c_1] + ' ' + c_1)
+                // console.log('c_min_spend -: ' + c_min_spend + ' ' + c_1)
+                // console.log("-> Min spend of " + c_ask + ' ' + c_2)
+                // console.log("-> Min spend of " + c_back * c_ask + ' ' + c_1)
+                // console.log("-> enough for: " + (b_out + portfolio[c_e][c_1]) / (c_back * c_ask) + ' trades')
+            } else {
+                if((b_out / (c_ask)) <= 1) {
+                    c_tradable = false
+                }
+                c_min_spend = c_ask
+
+                // console.log('balance -----: ' + (portfolio[c_e][c_1] + b_out) + ' ' + c_1)
+                // console.log('a_min_spend -: ' + c_min_spend + ' ' + c_1)
+                // console.log('<- enough ---: ' + (b_out / (c_ask)) + ' trades')
+                // console.log("<- Min spend of " + c_frwd * c_ask + ' ' + c_2)
+                // console.log("<- Min spend of " + c_ask + ' ' + c_1)
+                // console.log("<- enough for: " + (b_out / (c_ask)) + ' trades')
+            }
+        }
+
+        let profit = c_out - start_bal
+        let margin = (profit / start_bal) * 100
+
+        if(a_tradable && b_tradable && c_tradable && !isNaN(margin)) {
+            console.log(' ----------------- ')
+            console.log('[ ',a_1, '-', b_1, '-', c_1, ' ] - ', Math.round(margin), '%')
+
+            if(margin >= 0 && margin <= 100) {  // this basically handles if the data gets fucked up
+                tri_hist[x].consecutive = tri_hist[x].consecutive + 1
+            } else {
+                tri_hist[x].consecutive = 0
+            }
+
+            if(tri_hist[x].consecutive > pong_thresh) {
+
+                if(max_trades > 0) { // if we're not out of trades in config.
+        
+                    // Where is the value coming from in this triangle? trade 1, 2 or 3?
+                    console.log('== ARBITRAGE OPPORTUNITY SPOTTED! ==')
+                    console.log(`Tri ${x} : ${a_1}-[0]->${b_1}-[0]->${c_1}-[0]->${a_1} : eP = ${margin.toFixed(3)}% : ${tri_hist[x].consecutive}`)
+                    
+                    max_trades = max_trades - 1  // i.e. if max_trades was set to 10 in config
+                    triangle_q = triangle_q + 1  // idk
+        
+                    fireTriangle(tri, margin, start_bal) // CARPE DIEM!
+        
+                } else {
+                    console.log('no trades left')
+                }
+            } else {
+                console.log('watching...')
             }
         } else {
-            console.log('watching...')
+            // console.log('not a triangle tradable :(')
+            // minimum transaction error, low balance
         }
-    } else {
-        // console.log('not a triangle tradable :(')
-        // minimum transaction error, low balance
+
+
+    } else {  // meaning there's a triangle in action
+        // console.log('triangle in action')
+        // check what triangle stage we're at?
+        // console.log(histLog.triangle)
+        triHandler()
     }
+}
+
+remove = (array, element) => {
+    const index = array.indexOf(element);
+    return array.splice(index, 1);
+  }
+
+triHandler = () => {
+    console.log('TRIANGLE IN ACTION! ', histLog.triangle.path)
+
+    if(Object.keys(histLog).length === 1) {
+        // console.log('triangle only')
+    } else if (Object.keys(histLog).length === 2) {
+        console.log('working on ANGLE A')
+        // console.log(histLog.triangle.order_nums)
+        // console.log(Object.keys(histLog))
+        let keys = Object.keys(histLog)
+        remove(keys, 'triangle');
+
+        if(histLog.triangle.order_nums.indexOf(keys[0]) === -1) {
+            histLog.triangle.order_nums.push(keys[0])
+        }
+
+    } else if (Object.keys(histLog).length === 3) {
+        console.log('working on ANGLE B')
+    } else if (Object.keys(histLog).length === 4) {
+        console.log('working on ANGLE C')
+    }
+    // ========= Angle 2,3 [ polo DOGE USDC ] ==========
+    // Object.keys(histLog).forEach((key, i) => {
+    //     console.log(i, key)
+    // })
+
 }
 
 // Update portfolio object
 portUpdate = (exch, curr, op, amnt) => {
-    console.log('portUpdate called')
-    //console.log(exch, curr, op, amnt)
-    console.log("Old " + curr + " balance " + portfolio[exch][curr])
-
+    console.log(">>> OLD " + curr + " bal " + portfolio[exch][curr])
     let current_bal = portfolio[exch][curr]
-    let new_bal = 0
-    if(op === '-') {
-        new_bal = current_bal - Number(amnt)
-    } else if (op === '+') {
-        new_bal = current_bal + Number(amnt)
-    }
-    console.log("New " + curr + " balance " + new_bal)
-
+    let new_bal = op === '-' ? current_bal - Number(amnt) : current_bal + Number(amnt)
+    console.log(">>> NEW " + curr + " bal " + new_bal)
     portfolio[exch][curr] = new_bal
-
 }
 
 histUpdate = (data) => {  // upon receiving: newLimitOrder, newTrade, orderUpdate
     console.log('histUpdate called')
 
-    //console.log(histLog)
-    if(data.type === 'systemOrder') { 
+    if(data.type === 'systemOrder') {
 
-        console.log('generate system order')
-
-        // histLog
-        // time_init: '',
         // there's no order_id yet
+        console.log('adding system order to histLog')
+        // console.log(data)
+
+        histLog[`triangle`] = {
+            xP: data.xP,
+            complete: false,
+            path: data.triangle,
+            amount: data.amount,
+            time_init: data.time,
+            time_added: Math.round((new Date()).getTime() / 1000),
+            order_nums: [],
+            A: data.A, B: data.B, C: data.C,
+            time_A: '', time_B: '', time_C: '',
+            trade_A: false, trade_B: false, trade_C: false
+        }
+        // console.log('histLog: ', histLog)
 
     } else if(data.type === 'newLimitOrder') {       // Create Key : { values } for order
         console.log('NEW ORD UPDATE - ', data)
 
         console.log('pair - ' + data.pair)
-        console.log(histLog)
 
         histLog[`_${data.order_id}`] = { 
             complete: 0,                  // 1 if complete else 0
@@ -392,15 +430,13 @@ histUpdate = (data) => {  // upon receiving: newLimitOrder, newTrade, orderUpdat
             update: [ ]
         }
 
-        console.log(histLog)
-
     } else if (data.type === 'newTrade') {
         console.log('NEW TRADE UPDATE - ', data)
 
         console.log(data.order_id)
 
         if(histLog.hasOwnProperty(`_${data.order_id}`)) {
-            console.log('order id not present')
+            console.log('order id NOT present')
         } else {
             console.log('order id is present')
         }
@@ -420,24 +456,58 @@ histUpdate = (data) => {  // upon receiving: newLimitOrder, newTrade, orderUpdat
     }
 }
 // FUNCTION -> FIRE TRADE
-fireTrade = (exch, pair, amount, rate) => {
+fireTrade = (exch, pair, amount, rate, angle) => {
     console.log("---------      EXECUTING TRADE!      ---------")          
+    let owned = pair.split('_')[1]
+    let to = pair.split('_')[0]
+    let angle_pairs = histLog.triangle.path
 
-    if(log[exch][pair] === [ 'null' ]) { 
-        pair = `${pair.split('_')[1]}_${pair.split('_')[0]}`
+    if(angle === 'A') {
+        owned = angle_pairs[0].split(' ')[1]
+        to = angle_pairs[0].split(' ')[2]
+    } else if(angle === 'B') {
+        owned = angle_pairs[1].split(' ')[1]
+        to = angle_pairs[1].split(' ')[2]
+    } else if(angle === 'C') {
+        owned = angle_pairs[2].split(' ')[1]
+        to = angle_pairs[2].split(' ')[2]
     }
 
+    let dir = log[exch][`${owned}_${to}`][0] === 'null' ? 'frwd' : 'back'
+
+    console.log(histLog.triangle.path)
+    console.log('Angle: ' + angle)
     console.log('Exchange: ' + exch)
+    console.log('Direction: ' + dir)
     console.log("Official Pair: " + pair)
-    console.log("Currency Owned: " + amount)
-    console.log('Rate: ' + rate)
+    console.log("Amount To Trade: " + amount + ' ' + owned)
+    console.log('Time Since Execution: ' )
+
+
+    if(dir === 'frwd') {
+        console.log('Rate: ' + rate + ' ' + to + ' per ' + owned + ' ' + pair)
+        console.log("SELL!", pair, rate, amount)
+        poloniex.sell(pair, rate, amount)
+    } else {
+        console.log('Rate: ' + rate + ' ' + owned + ' per ' + to + ' ' + pair)
+        console.log("BUY!!", pair, rate, amount)
+        poloniex.buy(pair, rate, amount)
+    }
 
     // poloniex.buy(pair, rate, amount) // ETH_BAT buys 1 BAT
     // poloniex.sell(pair, rate, amount) // ETH_BAT sells 1 BAT
-    console.log("BOOM TRADE DONE")
     // poloniex.xxx(pair, rate, amount, fillOrKill, immediateOrCancel, postOnly [, callback])
-     
 
+    console.log('TRADE SENT!')
+ 
+    if(!histLog['triangle'].trade_A) {
+        // histLog['triangle'].trade_A = true
+    } else if(!histLog['triangle'].trade_B) {
+        // histLog['triangle'].trade_B = true
+    } else if(!histLog['triangle'].trade_C) {
+        // histLog['triangle'].trade_C = true
+    }
+    // console.log(histLog)
 }
 
 fireTriangle = (tri, xP, amount_1) => {  // triangle and expected profit margin
@@ -461,8 +531,9 @@ fireTriangle = (tri, xP, amount_1) => {  // triangle and expected profit margin
         type: 'systemOrder',
         time: tri_init,
         triangle: tri,
-        amount: 0,
-        order_num: '?'
+        amount: amount_1,
+        xP: xP,
+        A: A[1], B: B[1], C: C[1]
     })
 
     console.log(`========= Angle 1 [ ${tri[0]} ] ==========`)
@@ -475,29 +546,46 @@ fireTriangle = (tri, xP, amount_1) => {  // triangle and expected profit margin
         pair_1 = `${A[2]}_${A[1]}`
     }
 
-    fireTrade(A[0], pair_1, amount_1, rate_1)
+    fireTrade(A[0], pair_1, amount_1, rate_1, 'A')
 
-    console.log(`========= Angle 2 [ ${tri[1]} ] ==========`)
-    
-    while (!trade_wall['A']) {
-        // code block to be executed
-        // check hist object if this trade is complete
-      }
+    // The rest are handled by the triHandler() function
+    // basically switches from monitor mode to 
+    // console.log(`========= Angle 2 [ ${tri[1]} ] ==========`)
 
-    // wait for angle 1 to complete
-    console.log("angle 2") // fireTrade(B.split(' ')[0], pair, amount)
+    // // fireTrade(B.split(' ')[0], pair, amount)
+    // let rate_2 = log[B[0]][`${B[1]}_${B[2]}`][0]
+    // let pair_2 = `${B[1]}_${B[2]}`
 
-    console.log(`========= Angle 3 [ ${tri[2]} ] ==========`)
+    // if(log[B[0]][pair_2][0] === 'null') {
+    //     rate_2 = log[B[0]][`${B[2]}_${B[1]}`][0]
+    //     pair_2 = `${B[2]}_${B[1]}`
+    // }
 
-    // wait for angle 2 to complete
-    console.log("angle 3") // fireTrade(C.split(' ')[0], pair, amount)
+    // console.log('fire trade 2!')
+    //fireTrade(B[0], pair_2, 1, rate_2, 'B')
+    // console.log(`========= Angle 3 [ ${tri[2]} ] ==========`)
 
-    console.log(`=========   TRIANGLE RESULTS   ==========`)
+    // let rate_3 = log[C[0]][`${C[1]}_${C[2]}`][0]
+    // let pair_3 = `${C[1]}_${C[2]}`
 
-    console.log(amount_1 + " is now " + 0)
-    console.log("it took: <this long>")
+    // if(log[C[0]][pair_3][0] === 'null') {
+    //     rate_3 = log[C[0]][`${C[2]}_${C[1]}`][0]
+    //     pair_3 = `${C[2]}_${C[1]}`
+    // }
 
-    triangle_q = triangle_q - 1  // Remove this triangle from the queue
+    //fireTrade(C[0], pair_3, 1, rate_3, 'C')
+
+    // console.log(`=========   TRIANGLE RESULTS   ==========`)
+
+    // console.log(amount_1 + ' ' + A[1] + ' is now ' + 'xxx')
+    // console.log("Elapsed Time: ")
+    // console.log('Expected Profit: ' + Math.round(xP))
+    // console.log('Actual Profit')
+
+    // triangle_q = triangle_q - 1  // Remove this triangle from the queue
+
+    // console.log('Resuming Trading... ')
+
 }
 
 // ================
@@ -506,6 +594,7 @@ fireTriangle = (tri, xP, amount_1) => {  // triangle and expected profit margin
 
 // Account Monitor
 poloniex.on('message', (channelName, data, seq) => {
+    // console.log(data)
     if(data === 'subscriptionSucceeded') {
         console.log("POLO_1 account notifications succeeded")
     } else { 
@@ -542,11 +631,33 @@ poloniex.on('message', (channelName, data, seq) => {
                                 })
                 } else if (messageType === 'balanceUpdate') {
                     console.log("> MSG - Balance Update")
+                    console.log(message.data)
                     let update_curr = message.data.currency
                     let update_walt = message.data.wallet
-                    let update_amnt = update_amnt.charAt(0) === '-' ? message.data.amount.slice(1) : message.data.amount
-                    let operator = update_amnt.charAt(0) === '-' ? '-' : '+'
-                    // console.log(update_curr, update_walt, operator, Number(update_amnt))
+                    let update_amnt = message.data.amount.charAt(0) === '-' ? message.data.amount.slice(1) : message.data.amount
+                    let operator = message.data.amount.charAt(0) === '-' ? '-' : '+'
+                    
+                    console.log(update_curr, update_walt, operator, Number(update_amnt))
+                    console.log(histLog.triangle.amount)
+
+                    if(update_curr === histLog.triangle.A) {
+                        console.log('balance update for coin A')
+                        if(!histLog.triangle.trade_B) {
+                            console.log((update_amnt / histLog.triangle.amount) * 100, '% coin A removed')
+                        } else {
+                            console.log('FINAL STEP COMPLETE!')
+                            // confirm that the C->A order has been filled
+                        }
+                        
+                    } else if(update_curr === histLog.triangle.B) {
+                        console.log('balance update for coin B')
+                        // confirm that the A->B order has been filled
+
+                    } else if(update_curr === histLog.triangle.C) {
+                        console.log('balance update for coin C')
+                        // confirm that the B->C order has been filled
+                    }
+
                     portUpdate('polo', update_curr, operator, Number(update_amnt))
                 } else if (messageType === 'orderUpdate') {  
                     console.log("> MSG - Order Update")
@@ -632,6 +743,7 @@ poloniex.on('close', (reason, details) => {
  
 poloniex.on('error', (error) => {
   console.log(`POLO_1 : An error has occured`, error);
+
 });
  
 poloniex.openWebSocket();

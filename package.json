@@ -13,6 +13,7 @@
     "js-sha512": "^0.8.0",
     "node-bittrex-api": "^0.8.3",
     "poloniex-api-node": "^2.0.0",
+    "wait-until": "0.0.2",
     "ws": "^6.1.2"
   },
   "devDependencies": {},
