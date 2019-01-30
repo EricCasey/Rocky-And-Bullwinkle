@@ -16,7 +16,7 @@ require('dotenv').config()
 
 // ----- TMP ------
 let max_points = 3   // the length of the realtime log arrays (speed?)
-let pong_thresh = 1  // Change this to time-based?
+let pong_thresh = 100  // Change this to time-based?
 let max_trades = 1
 let triangle_q = 0
 let portfolio = {  }
@@ -102,10 +102,11 @@ for(let tri = 0; tri <= triangles.length - 1; tri++) {
     }
 }
 
-// Setup ask history object
+// Setup Order Book Object
+let order_book = { polo: { ask: { }, bid: { } }, btrx: { ask: { }, bid: { } } }
+let trade_wall = { A: false, B: false, C: false }
 let ask_hist = { }
 let bid_hist = { }
-let trade_wall = { A: false, B: false, C: false }
 
 // FUNCTION -> Update Realtime Log
 updateLog = (exch, pair, prix) => {
@@ -487,11 +488,11 @@ fireTrade = (exch, pair, amount, rate, angle) => {
     if(dir === 'frwd') {
         console.log('Rate: ' + rate + ' ' + to + ' per ' + owned + ' ' + pair)
         console.log("SELL!", pair, rate, amount)
-        poloniex.sell(pair, rate, amount)
+        // poloniex.sell(pair, rate, amount)
     } else {
         console.log('Rate: ' + rate + ' ' + owned + ' per ' + to + ' ' + pair)
         console.log("BUY!!", pair, rate, amount)
-        poloniex.buy(pair, rate, amount)
+        // poloniex.buy(pair, rate, amount)
     }
 
     // poloniex.buy(pair, rate, amount) // ETH_BAT buys 1 BAT
@@ -601,6 +602,7 @@ poloniex.on('message', (channelName, data, seq) => {
         if(channelName === 'ticker') {
             ask_hist[data.currencyPair] = Number(data.lowestAsk)
             bid_hist[data.currencyPair] = Number(data.highestBid)
+            // console.log('ticker', ask_hist, bid_hist)
         } else {
         // handle if NewTrade isnt first or not present 
         // for(let n = 0; n < data.length; n++) {
@@ -748,7 +750,7 @@ poloniex.on('error', (error) => {
  
 poloniex.openWebSocket();
 
-// VANILLA "READING" WEBSOCKET
+// VANILLA PRICE FEED WEBSOCKET
 polo_ws.on('open', function open() {
     console.log('POLO_0 connected')
 
@@ -779,17 +781,100 @@ polo_ws.onmessage = e => {
 
     if(msg.length > 1 && msg_body !== undefined) {
 
-        let prix = [ ] // this takes in trades, orders & sales.
+        console.log("===== " + pair + " =====")
+
+        let prix = [ ]   // this takes in the live order book
+        let o_asks = [ ] 
+        let o_bids = [ ]
 
         for(let c = 0; c < msg_body.length; c++) {
-            if(msg_body[0][0] === 'i') {
-                //console.log('initial dump')
-            } else if (msg_body[0][0] === 'o') {
-                prix.push(msg_body[0][2]) //console.log('book update')
-            } else if (msg_body[0][0] === 't') {
-                prix.push(msg_body[0][2]) //console.log('trade update')
+            if(msg_body[c][0] === 'i') {
+                console.log('> initial dump')
+
+                let max_length = 30
+                let ask_book = msg_body[c][1].orderBook[0]
+                let bid_book = msg_body[c][1].orderBook[1]
+
+                let askArr = Object.keys(ask_book).map(Number).slice(0, max_length)
+                let bidArr = Object.keys(bid_book).map(Number).slice(0, max_length)
+
+                if(Object.keys(order_book.polo.ask).indexOf(pair) === -1) {
+                    order_book.polo.ask[pair] = { }
+                    order_book.polo.bid[pair] = { }
+                }
+                
+                for(let r = 0; r <= max_length - 1; r++) {
+                    // console.log(askArr[r].toFixed(8))
+                    // console.log(ask_book[askArr[r].toFixed(8)])
+                    order_book.polo.ask[pair][askArr[r].toFixed(8)] = Number(ask_book[askArr[r].toFixed(8)])
+                    // console.log(bidArr[r].toFixed(8))
+                    // console.log(bid_book[bidArr[r].toFixed(8)])
+                    order_book.polo.bid[pair][bidArr[r].toFixed(8)] = Number(bid_book[bidArr[r].toFixed(8)])
+                    // { <ask/bid> : <amount> }
+                }
+                // console.log(order_book)
+            } else if (msg_body[c][0] === 'o') {
+                console.log('> book update')
+
+                if(Number(msg_body[c][3]) === 0) {
+                    console.log('> removal', pair, msg_body[c][2])
+
+                    if(order_book.polo.ask[pair][msg_body[c][2]] !== undefined && order_book.polo.bid[pair][msg_body[c][2]] !== undefined) {
+                        order_book.polo.ask[pair][msg_body[c][2]] = 0
+                        order_book.polo.bid[pair][msg_body[c][2]] = 0
+                    } else if (order_book.polo.bid[pair][msg_body[c][2]] === undefined) {
+                        order_book.polo.ask[pair][msg_body[c][2]] = 0
+                    } else if (order_book.polo.ask[pair][msg_body[c][2]] === undefined) {
+                        order_book.polo.bid[pair][msg_body[c][2]] = 0
+                    } 
+
+                } else {
+                    if(msg_body[c][1] === 0) {
+                        console.log('>> price change SELL (someone wants to sell)')
+                        console.log(order_book.polo.ask[pair][msg_body[c][2]])
+                        console.log(order_book.polo.bid[pair][msg_body[c][2]])
+                        
+                        console.log(ask_hist[pair] + ' - current min ask')
+                        console.log(Number(msg_body[c][2]) + ' - this ask')
+                        console.log(Number(msg_body[c][2]) < ask_hist[pair])
+
+                        if(ask_hist[pair] === undefined) {
+                            ask_hist[pair] = Number(msg_body[c][2])
+                        } else if (Number(msg_body[c][2]) < ask_hist[pair]) {
+                            ask_hist[pair] = Number(msg_body[c][2])
+                        }
+
+                        order_book.polo.ask[pair][msg_body[c][2]] = Number(msg_body[c][3])
+
+                    } else {
+                        console.log('>> price change BUY (someone wants to buy)')
+                        console.log(order_book.polo.ask[pair][msg_body[c][2]])
+                        console.log(order_book.polo.bid[pair][msg_body[c][2]])
+                        
+                        console.log(bid_hist[pair] + ' - current max bid')
+                        console.log(Number(msg_body[c][2]) + ' - this bid')
+                        console.log(Number(msg_body[c][2]) > bid_hist[pair])
+
+                        if(bid_hist[pair] === undefined) {
+                            bid_hist[pair] = Number(msg_body[c][2])
+                        } else if (Number(msg_body[c][2]) > bid_hist[pair]) {
+                            bid_hist[pair] = Number(msg_body[c][2])
+                        }
+
+                        order_book.polo.bid[pair][msg_body[c][2]] = Number(msg_body[c][3])
+                    }
+                    console.log(msg_body[c])
+                    prix.push(msg_body[c][2])
+                }
+
+            } else if (msg_body[c][0] === 't') {
+                console.log('> trade update')
+                // prix.push(msg_body[c][2]) 
+            } else {
+                console.log("> ERROR?")
             }
         }
+        // console.log(log)
         updateLog('polo', pair, prix)
     }
 }
