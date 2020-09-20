@@ -1,4 +1,4 @@
-# Rocky & Bullwinke Crypto Trading Bot Combo
+# Rocky & Bullwinke HFT Bot Duo
 
 [ ABANDONED :( ]
 
