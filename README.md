@@ -2,8 +2,6 @@
 
 ## Intro
 
-<img style="float: right;" src="./img/rb.jpg">
-
 The goal of this project is to create 2 servers in built in 2 different languages that communicate with eachother to make smart triangluar arbitrage trades on Poloniex and Bittrex (tbd). It can be deployed anywhere but just for fun it can also be setup on raspberry pi.
 
 ### The Basic Idea: [Triangular Arbitrage](https://en.wikipedia.org/wiki/Triangular_arbitrage)
